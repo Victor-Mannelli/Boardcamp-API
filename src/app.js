@@ -148,17 +148,17 @@ app.get("/customers", async (req, res) => {
 	}
 });
 app.get("/customers/:id", async (req, res) => {
-	const id = req.params;
-	const validation = idParamsSchema.validate(id, { abortEarly: true });
+	const clientParams = req.params;
+	const validation = idParamsSchema.validate(clientParams, { abortEarly: true });
 
 	if (validation.error) return res.sendStatus(400);
 
 	try {
 		const user = await connection.query(
-			"SELECT * FROM customers WHERE id = $1",
-			[id]
+			"SELECT * FROM customers WHERE id = $1;",
+			[clientParams.id]
 		);
-		if (!user) return res.sendStatus(404);
+		if (user.rows.length === 0) return res.sendStatus(404);
 		res.send(user.rows);
 	} catch (error) {
 		console.log(error);
@@ -190,7 +190,9 @@ app.put("/customers/:id", async (req, res) => {
 	const clientParams = req.params;
 	const client = req.body;
 
-	const paramsValidation = idParamsSchema.validate(clientParams, { abortEarly: true });
+	const paramsValidation = idParamsSchema.validate(clientParams, {
+		abortEarly: true,
+	});
 	const bodyValidation = clientSchema.validate(client, { abortEarly: true });
 
 	if (paramsValidation.error) return res.sendStatus(404);
@@ -198,7 +200,7 @@ app.put("/customers/:id", async (req, res) => {
 
 	try {
 		const cpfAlreadyInUse = await connection.query(
-			'SELECT * FROM customers WHERE cpf = $1 AND id <> $2;',
+			"SELECT * FROM customers WHERE cpf = $1 AND id <> $2;",
 			[client.cpf, clientParams.id]
 		);
 		if (cpfAlreadyInUse.rows.length !== 0) return res.sendStatus(409);
