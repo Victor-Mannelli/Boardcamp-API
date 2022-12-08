@@ -18,7 +18,19 @@ const gamesSchema = joi.object({
 	pricePerDay: joi.number().integer().min(1).required(),
 });
 const gameQuerySchema = joi.object({
+	name: joi.string().optional(),
+});
+const cpfQuerySchema = joi.object({
+	cpf: joi.required(),
+});
+const idParamsSchema = joi.object({
+	id: joi.required(),
+});
+const clientSchema = joi.object({
 	name: joi.string().required(),
+	phone: joi.string().min(11).required(),
+	cpf: joi.string().min(11).required(),
+	birthday: joi.date().required(),
 });
 
 app.get("/categories", async (_req, res) => {
@@ -34,9 +46,7 @@ app.post("/categories", async (req, res) => {
 
 	const validation = categorySchema.validate(category, { abortEarly: true });
 	if (validation.error) {
-		return res
-			.sendStatus(400)
-			.send({ message: "There must be a category to add" });
+		return res.status(400).send({ message: "There must be a category to add" });
 	}
 
 	try {
@@ -48,7 +58,7 @@ app.post("/categories", async (req, res) => {
 			return res.status(409).send({ message: "The category already exists" });
 		}
 
-		await connection.query("INSERT INTO categories (nome) VALUES ($1);", [
+		await connection.query("INSERT INTO categories (name) VALUES ($1);", [
 			category.name,
 		]);
 		res.sendStatus(201);
@@ -62,9 +72,7 @@ app.get("/games", async (req, res) => {
 	const validation = gameQuerySchema.validate(game, { abortEarly: true });
 
 	if (validation.error) {
-		return res
-			.sendStatus(400)
-			.send({ message: "There must be a category to add" });
+		return res.status(400).send({ message: "There must be a category to add" });
 	}
 
 	try {
@@ -104,7 +112,7 @@ app.post("/games", async (req, res) => {
 		if (gameAlreadyExists.rows > 0) return res.sendStatus(409);
 
 		await connection.query(
-			"INSERT INTO games (name, image, stockTotal, categoryId, pricePerDay) VALUES ($1, $2, $3, $4, $5))",
+			'INSERT INTO games (name, image, "stockTotal", "categoryId", "pricePerDay") VALUES ($1, $2, $3, $4, $5)',
 			[
 				game.name,
 				game.image,
@@ -115,7 +123,94 @@ app.post("/games", async (req, res) => {
 		);
 		res.status(201).send({ message: "New game added" });
 	} catch (error) {
-		console.loog(error);
+		console.log(error);
+	}
+});
+
+app.get("/customers", async (req, res) => {
+	const cpf = req.query.cpf;
+	const validation = cpfQuerySchema.validate(cpf, { abortEarly: true });
+
+	if (validation.error) return res.sendStatus(422);
+	try {
+		if (cpf) {
+			const filteredCustomers = await connection.query(
+				"SELECT * FROM customers WHERE cpf LIKE $1%;",
+				[cpf]
+			);
+			return res.status(201).send(filteredCustomers.rows);
+		}
+
+		const customers = await connection.query("SELECT * FROM customers;");
+		res.status(201).send(customers.rows);
+	} catch (error) {
+		console.log(error);
+	}
+});
+app.get("/customers/:id", async (req, res) => {
+	const id = req.params;
+	const validation = idParamsSchema.validate(id, { abortEarly: true });
+
+	if (validation.error) return res.sendStatus(400);
+
+	try {
+		const user = await connection.query(
+			"SELECT * FROM customers WHERE id = $1",
+			[id]
+		);
+		if (!user) return res.sendStatus(404);
+		res.send(user.rows);
+	} catch (error) {
+		console.log(error);
+	}
+});
+app.post("/customers", async (req, res) => {
+	const client = req.body;
+	const validation = clientSchema.validate(client, { abortEarly: true });
+
+	if (validation.error) return res.sendStatus(400);
+
+	try {
+		const clientAlreadyExists = await connection.query(
+			"SELECT * FROM customers WHERE cpf = $1",
+			[client.cpf]
+		);
+		if (clientAlreadyExists.rows.length !== 0) return res.sendStatus(409);
+
+		await connection.query(
+			"INSERT INTO customers (name, phone, cpf, birthday) VALUES ($1, $2, $3, $4);",
+			[client.name, client.phone, client.cpf, client.birthday]
+		);
+		res.status(201).send({ message: "Client created" });
+	} catch (error) {
+		console.log(error);
+	}
+});
+app.put("/customers/:id", async (req, res) => {
+	const clientParams = req.params;
+	const client = req.body;
+
+	const paramsValidation = idParamsSchema.validate(clientParams, { abortEarly: true });
+	const bodyValidation = clientSchema.validate(client, { abortEarly: true });
+
+	if (paramsValidation.error) return res.sendStatus(404);
+	if (bodyValidation.error) return res.sendStatus(400);
+
+	try {
+		const cpfAlreadyInUse = await connection.query(
+			'SELECT * FROM customers WHERE cpf = $1 AND id <> $2;',
+			[client.cpf, clientParams.id]
+		);
+		if (cpfAlreadyInUse.rows.length !== 0) return res.sendStatus(409);
+
+		await connection.query(
+			"UPDATE customers SET (name, phone, cpf, birthday) = ($1, $2, $3, $4) WHERE id = $5;",
+			[client.name, client.phone, client.cpf, client.birthday, clientParams.id]
+		);
+
+		res.status(200).send({ message: "Client info updated" });
+	} catch (error) {
+		console.log(error);
 	}
 });
 
