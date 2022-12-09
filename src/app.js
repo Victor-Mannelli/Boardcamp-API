@@ -36,7 +36,7 @@ const clientSchema = joi.object({
 app.get("/categories", async (_req, res) => {
 	try {
 		const categories = await connection.query("SELECT * FROM categories;");
-		res.status(201).send(categories.rows);
+		res.status(200).send(categories.rows);
 	} catch (error) {
 		console.log(error);
 	}
@@ -81,13 +81,13 @@ app.get("/games", async (req, res) => {
 				`SELECT g.*, c.name as "categoryName" FROM games as g JOIN categories as c ON g."categoryId" = c.id WHERE name LIKE '($1)%';`,
 				[game.name]
 			);
-			return res.status(201).send(filteredGames.rows);
+			return res.status(200).send(filteredGames.rows);
 		}
 
 		const newGamesTable = await connection.query(
 			'SELECT g.*, c.name as "categoryName" FROM games as g JOIN categories as c ON g."categoryId" = c.id;'
 		);
-		res.status(201).send(newGamesTable.rows);
+		res.status(200).send(newGamesTable.rows);
 	} catch (error) {
 		console.log(error);
 	}
@@ -138,18 +138,20 @@ app.get("/customers", async (req, res) => {
 				"SELECT * FROM customers WHERE cpf LIKE $1%;",
 				[cpf]
 			);
-			return res.status(201).send(filteredCustomers.rows);
+			return res.status(200).send(filteredCustomers.rows);
 		}
 
 		const customers = await connection.query("SELECT * FROM customers;");
-		res.status(201).send(customers.rows);
+		res.status(200).send(customers.rows);
 	} catch (error) {
 		console.log(error);
 	}
 });
 app.get("/customers/:id", async (req, res) => {
 	const clientParams = req.params;
-	const validation = idParamsSchema.validate(clientParams, { abortEarly: true });
+	const validation = idParamsSchema.validate(clientParams, {
+		abortEarly: true,
+	});
 
 	if (validation.error) return res.sendStatus(400);
 
@@ -211,6 +213,61 @@ app.put("/customers/:id", async (req, res) => {
 		);
 
 		res.status(200).send({ message: "Client info updated" });
+	} catch (error) {
+		console.log(error);
+	}
+});
+
+app.get("/rentals", async (req, res) => {
+	const customerId = req.query.customerId;
+	const gameId = req.query.gameId;
+
+	try {
+		if (customerId) {
+			const clientFilter = await connection.query(
+				`
+                SELECT r.*, 
+                jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+                jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+                FROM rentals AS r 
+                JOIN customers AS c ON r."customerId" = c.id 
+                JOIN games AS g ON g.id = r."gameId" 
+                JOIN categories AS ca ON ca.id = g."categoryId"
+                WHERE "customerId" = $1;
+                `,
+				[customerId]
+			);
+			return res.status(200).send(clientFilter.rows);
+		}
+		if (gameId) {
+			const gameFilter = await connection.query(
+				`
+                SELECT r.*, 
+                jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+                jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+                FROM rentals AS r 
+                JOIN customers AS c ON r."customerId" = c.id 
+                JOIN games AS g ON g.id = r."gameId" 
+                JOIN categories AS ca ON ca.id = g."categoryId"
+                WHERE "gameId" = $1;
+                `,
+				[gameId]
+			);
+			return res.status(200).send(gameFilter.rows);
+		}
+		const rentalList = await connection.query(
+			`
+            SELECT r.*, 
+            jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+            jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+            FROM rentals AS r 
+            JOIN customers AS c ON r."customerId" = c.id 
+            JOIN games AS g ON g.id = r."gameId" 
+            JOIN categories AS ca ON ca.id = g."categoryId";
+            `
+		);
+
+		res.status(200).send(rentalList.rows);
 	} catch (error) {
 		console.log(error);
 	}
