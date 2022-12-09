@@ -339,5 +339,93 @@ app.post("/rentals", async (req, res) => {
 		console.log(error);
 	}
 });
+app.post("/rentals/:id/return", async (req, res) => {
+	const rentalParams = req.params;
+	const validation = idParamsSchema.validate(rentalParams, {
+		abortEarly: true,
+	});
+	if (validation.error) return res.sendStatus(400);
+
+	try {
+		const rentalExist = await connection.query(
+			"SELECT * FROM rentals WHERE id = $1",
+			[rentalParams.id]
+		);
+		if (rentalExist.rows[0].length === 0) {
+			return res.status(404).send({ message: "Rental not found" });
+		}
+		const rentalAlreadyClosed = await connection.query(
+			'SELECT "returnDate" FROM rentals WHERE id = $1',
+			[rentalParams.id]
+		);
+		if (rentalAlreadyClosed.rows[0].length !== 0) {
+			return res.status(400).send({ message: "Rental already closed" });
+		}
+
+		const daysRented = await connection.query(
+			'SELECT "daysRented" FROM rentals WHERE id = $1',
+			[rentalParams.id]
+		);
+		const rentDate = await connection.query(
+			'SELECT "rentDate" FROM rentals WHERE id = $1;',
+			[rentalParams.id]
+		);
+		const pricePerDay = await connect.query(
+			'SELECT "pricePerDay" FROM games WHERE id IN (SELECT "gameId" FROM rentals WHERE id = $1);',
+			[rentalParams.id]
+		);
+
+		let delayFee;
+		if (
+			dayjs(new Date()).diff(rentDate.rows[0].rentDate, "day") <= daysRented
+		) {
+			delayFee = null;
+		} else {
+			delayFee =
+				dayjs(new Date()).diff(rentDate.rows[0].rentDate, "day") * pricePerDay;
+		}
+
+		await connection.query(
+			'UPDATE rentals SET ("returnDate", "delayFee") = ($1, $2)',
+			[dayjs().format("YYYY-MM-DD"), delayFee]
+		);
+
+		res.sendStatus(200);
+	} catch (error) {
+		console.log(error);
+	}
+});
+app.delete("/rentals/:id", async (req, res) => {
+	const rentalParams = req.params;
+	const validation = idParamsSchema.validate(rentalParams, {
+		abortEarly: true,
+	});
+	if (validation.error) return res.sendStatus(400);
+
+	try {
+		const rentalExist = await connection.query(
+			"SELECT * FROM rentals WHERE id = $1",
+			[rentalParams.id]
+		);
+		if (rentalExist.rows[0].length === 0) {
+			return res.status(404).send({ message: "Rental not found" });
+		}
+		const rentalAlreadyClosed = await connection.query(
+			'SELECT "returnDate" FROM rentals WHERE id = $1',
+			[rentalParams.id]
+		);
+		if (rentalAlreadyClosed.rows[0].length !== 0) {
+			return res.status(400).send({ message: "Rental already closed" });
+		}
+
+		await connection.query("DELETE FROM rentals WHERE id = $1", [
+			rentalParams.id,
+		]);
+
+		res.sendStatus(200);
+	} catch (error) {
+		console.log(error);
+	}
+});
 
 export default app;
