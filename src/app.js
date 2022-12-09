@@ -2,6 +2,7 @@ import express, { json } from "express";
 import cors from "cors";
 import connection from "./database.js";
 import joi from "joi";
+import dayjs from "dayjs";
 
 const app = express();
 app.use(cors());
@@ -12,7 +13,7 @@ const categorySchema = joi.object({
 });
 const gamesSchema = joi.object({
 	name: joi.string().required(),
-	image: joi.required(),
+	image: joi.string().required(),
 	stockTotal: joi.number().integer().min(1).required(),
 	categoryId: joi.number().required(),
 	pricePerDay: joi.number().integer().min(1).required(),
@@ -31,6 +32,11 @@ const clientSchema = joi.object({
 	phone: joi.string().min(11).required(),
 	cpf: joi.string().min(11).required(),
 	birthday: joi.date().required(),
+});
+const rentalSchema = joi.object({
+	customerId: joi.number().required(),
+	gameId: joi.number().required(),
+	daysRented: joi.number().min(1).required(),
 });
 
 app.get("/categories", async (_req, res) => {
@@ -268,6 +274,67 @@ app.get("/rentals", async (req, res) => {
 		);
 
 		res.status(200).send(rentalList.rows);
+	} catch (error) {
+		console.log(error);
+	}
+});
+app.post("/rentals", async (req, res) => {
+	const rental = req.body;
+	const validation = rentalSchema.validate(rental, { abortEarly: true });
+	if (validation.error) return res.sendStatus(400);
+
+	try {
+		const clientExists = await connection.query(
+			"SELECT * FROM customers WHERE id = $1;",
+			[rental.customerId]
+		);
+		if (clientExists.rows.length === 0) {
+			return res.status(400).send({ message: "User doesn't exist" });
+		}
+
+		const gameExists = await connection.query(
+			"SELECT * FROM games WHERE id = $1",
+			[rental.gameId]
+		);
+		if (gameExists.rows.length === 0) {
+			return res.status(400).send({ message: "Game doesn't exist" });
+		}
+
+		const stockQuantity = await connection.query(
+			'SELECT "stockTotal" FROM games WHERE id = $1;',
+			[rental.gameId]
+		);
+
+		const gamesRented = await connection.query(
+			'SELECT * FROM rentals WHERE "gameId" = $1;',
+			[rental.gameId]
+		);
+
+		if (!gamesRented.rows.length < stockQuantity.rows[0].stockTotal) {
+			return res.status(400).send({ message: "Out of stock" });
+		}
+		const chosenGame = await connection.query(
+			'SELECT "pricePerDay" FROM games WHERE id = $1',
+			[rental.gameId]
+		);
+
+		await connection.query(
+			`INSERT INTO rentals
+		    ("customerId", "gameId", "rentDate", "daysRented", "returnDate", "originalPrice", "delayFee")
+		    VALUES
+		    ($1, $2, $3, $4, $5, $6, $7)`,
+			[
+				rental.customerId,
+				rental.gameId,
+				dayjs().format("YYYY-MM-DD"),
+				rental.daysRented,
+				null,
+				rental.daysRented * chosenGame.rows[0].pricePerDay,
+				null,
+			]
+		);
+
+		res.sendStatus(201);
 	} catch (error) {
 		console.log(error);
 	}
