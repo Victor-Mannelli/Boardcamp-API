@@ -232,15 +232,15 @@ app.get("/rentals", async (req, res) => {
 		if (customerId) {
 			const clientFilter = await connection.query(
 				`
-                SELECT r.*, 
-                jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
-                jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
-                FROM rentals AS r 
-                JOIN customers AS c ON r."customerId" = c.id 
-                JOIN games AS g ON g.id = r."gameId" 
-                JOIN categories AS ca ON ca.id = g."categoryId"
-                WHERE "customerId" = $1;
-                `,
+                 SELECT r.*, 
+                 jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+                 jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+                 FROM rentals AS r 
+                 JOIN customers AS c ON r."customerId" = c.id 
+                 JOIN games AS g ON g.id = r."gameId" 
+                 JOIN categories AS ca ON ca.id = g."categoryId"
+                 WHERE "customerId" = $1;
+                 `,
 				[customerId]
 			);
 			return res.status(200).send(clientFilter.rows);
@@ -272,7 +272,6 @@ app.get("/rentals", async (req, res) => {
             JOIN categories AS ca ON ca.id = g."categoryId";
             `
 		);
-
 		res.status(200).send(rentalList.rows);
 	} catch (error) {
 		console.log(error);
@@ -351,17 +350,16 @@ app.post("/rentals/:id/return", async (req, res) => {
 			"SELECT * FROM rentals WHERE id = $1",
 			[rentalParams.id]
 		);
-		if (rentalExist.rows[0].length === 0) {
+		if (rentalExist.rows.length === 0) {
 			return res.status(404).send({ message: "Rental not found" });
 		}
 		const rentalAlreadyClosed = await connection.query(
 			'SELECT "returnDate" FROM rentals WHERE id = $1',
 			[rentalParams.id]
 		);
-		if (rentalAlreadyClosed.rows[0].length !== 0) {
+		if (rentalAlreadyClosed.rows[0].returnDate !== null) {
 			return res.status(400).send({ message: "Rental already closed" });
 		}
-
 		const daysRented = await connection.query(
 			'SELECT "daysRented" FROM rentals WHERE id = $1',
 			[rentalParams.id]
@@ -370,24 +368,25 @@ app.post("/rentals/:id/return", async (req, res) => {
 			'SELECT "rentDate" FROM rentals WHERE id = $1;',
 			[rentalParams.id]
 		);
-		const pricePerDay = await connect.query(
+		const pricePerDay = await connection.query(
 			'SELECT "pricePerDay" FROM games WHERE id IN (SELECT "gameId" FROM rentals WHERE id = $1);',
 			[rentalParams.id]
 		);
 
 		let delayFee;
-		if (
-			dayjs(new Date()).diff(rentDate.rows[0].rentDate, "day") <= daysRented
-		) {
-			delayFee = null;
+		const date1 = dayjs(new Date()).format("YYYY-MM-DD");
+		const date2 = dayjs(rentDate.rows[0].rentDate).format("YYYY-MM-DD");
+
+		if (dayjs(date1).diff(date2, "day") <= daysRented.rows[0].daysRented) {
+			delayFee = 0;
 		} else {
 			delayFee =
-				dayjs(new Date()).diff(rentDate.rows[0].rentDate, "day") * pricePerDay;
+				dayjs(date1).diff(date2, "day") * pricePerDay.rows[0].pricePerDay;
 		}
 
 		await connection.query(
-			'UPDATE rentals SET ("returnDate", "delayFee") = ($1, $2)',
-			[dayjs().format("YYYY-MM-DD"), delayFee]
+			'UPDATE rentals SET ("returnDate", "delayFee") = ($1, $2) WHERE id = $3',
+			[dayjs().format("YYYY-MM-DD"), delayFee, rentalParams.id]
 		);
 
 		res.sendStatus(200);
@@ -407,15 +406,15 @@ app.delete("/rentals/:id", async (req, res) => {
 			"SELECT * FROM rentals WHERE id = $1",
 			[rentalParams.id]
 		);
-		if (rentalExist.rows[0].length === 0) {
+		if (rentalExist.rows.length === 0) {
 			return res.status(404).send({ message: "Rental not found" });
 		}
 		const rentalAlreadyClosed = await connection.query(
 			'SELECT "returnDate" FROM rentals WHERE id = $1',
 			[rentalParams.id]
 		);
-		if (rentalAlreadyClosed.rows[0].length !== 0) {
-			return res.status(400).send({ message: "Rental already closed" });
+		if (rentalAlreadyClosed.rows.length === 0) {
+			return res.status(400).send({ message: "Rental is still open" });
 		}
 
 		await connection.query("DELETE FROM rentals WHERE id = $1", [
