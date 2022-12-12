@@ -327,6 +327,36 @@ app.get("/rentals", async (req, res) => {
 		console.log(error);
 	}
 });
+app.get("/rentals/metrics", async (req, res) => {
+	const startDate = req.query.startDate;
+	const endDate = req.query.endDate;
+	
+	try {
+		const totalOrPrice = await connection.query(
+			'SELECT SUM("originalPrice") FROM rentals WHERE "returnDate" IS NOT NULL;'
+		);
+		const totalFee = await connection.query(
+			'SELECT SUM("delayFee") FROM rentals WHERE "returnDate" IS NOT NULL;'
+		);
+		const revenue = totalOrPrice.rows[0].sum + totalFee.rows[0].sum;
+
+		const allClosedRentals = await connection.query(
+			'SELECT * FROM rentals WHERE "returnDate" IS NOT NULL;'
+		);
+		const rentals = allClosedRentals.rows.length;
+		const average = (revenue / rentals).toFixed(0);
+
+		const metrics = {
+			revenue,
+			rentals,
+			average,
+		};
+
+		res.status(200).send(metrics);
+	} catch (error) {
+		console.log(error);
+	}
+});
 app.post("/rentals", async (req, res) => {
 	const rental = req.body;
 	const validation = rentalSchema.validate(rental, { abortEarly: true });
