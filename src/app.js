@@ -227,6 +227,8 @@ app.put("/customers/:id", async (req, res) => {
 app.get("/rentals", async (req, res) => {
 	const customerId = req.query.customerId;
 	const gameId = req.query.gameId;
+	const status = req.query.status;
+	const startDate = req.query.startDate;
 
 	try {
 		if (customerId) {
@@ -261,6 +263,54 @@ app.get("/rentals", async (req, res) => {
 			);
 			return res.status(200).send(gameFilter.rows);
 		}
+		if (status === "open") {
+			const rentalOpen = await connection.query(
+				`
+				SELECT r.*, 
+                jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+                jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+                FROM rentals AS r 
+                JOIN customers AS c ON r."customerId" = c.id 
+                JOIN games AS g ON g.id = r."gameId" 
+                JOIN categories AS ca ON ca.id = g."categoryId"
+				WHERE "returnDate" IS NULL;
+				`
+			);
+			return res.status(200).send(rentalOpen.rows);
+		}
+		if (status === "closed") {
+			const rentalClosed = await connection.query(
+				`
+				SELECT r.*, 
+                jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+                jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+                FROM rentals AS r 
+                JOIN customers AS c ON r."customerId" = c.id 
+                JOIN games AS g ON g.id = r."gameId" 
+                JOIN categories AS ca ON ca.id = g."categoryId"
+				WHERE "returnDate" IS NOT NULL;
+				`
+			);
+			return res.status(200).send(rentalClosed.rows);
+		}
+
+		if (startDate) {
+			const dateFilter = await connection.query(
+				`
+			SELECT r.*, 
+			jsonb_build_object('id', c.id, 'name', c.name) AS customer, 
+			jsonb_build_object('id', g.id, 'game', g.name, 'categoryId', g."categoryId", 'categoryName', ca.name) AS game
+			FROM rentals AS r 
+			JOIN customers AS c ON r."customerId" = c.id 
+			JOIN games AS g ON g.id = r."gameId" 
+			JOIN categories AS ca ON ca.id = g."categoryId"
+			WHERE "rentDate" >= $1;
+			`,
+				[startDate]
+			);
+			return res.status(200).send(dateFilter.rows);
+		}
+
 		const rentalList = await connection.query(
 			`
             SELECT r.*, 
@@ -309,7 +359,7 @@ app.post("/rentals", async (req, res) => {
 			[rental.gameId]
 		);
 
-		if (!gamesRented.rows.length < stockQuantity.rows[0].stockTotal) {
+		if (gamesRented.rows.length >= stockQuantity.rows[0].stockTotal) {
 			return res.status(400).send({ message: "Out of stock" });
 		}
 		const chosenGame = await connection.query(
